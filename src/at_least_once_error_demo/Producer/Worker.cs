@@ -13,32 +13,22 @@ public class Worker
 {
     public static async Task Producer(string? brokerList, string? connStr, string? topic, string? cacertlocation)
     {
-        try
+        var config = new ProducerConfig
         {
-            var config = new ProducerConfig
-            {
-                BootstrapServers = brokerList,
-                SecurityProtocol = SecurityProtocol.Plaintext,
-                SaslMechanism = SaslMechanism.Plain,
-                SaslUsername = "$ConnectionString",
-                SaslPassword = connStr,
-                SslCaLocation = cacertlocation,
-                //Debug = "security,broker,protocol"        //Uncomment for librdkafka debugging information
-            };
-            using (var producer = new ProducerBuilder<long, string>(config).SetKeySerializer(Serializers.Int64).SetValueSerializer(Serializers.Utf8).Build())
-            {
-                Console.WriteLine("Sending 10 messages to topic: " + topic + ", broker(s): " + brokerList);
-                for (int x = 0; x < 10; x++)
-                {
-                    var msg = string.Format("Sample message #{0} sent at {1}", x, DateTime.Now.ToString("yyyy-MM-dd_HH:mm:ss.ffff"));
-                    var deliveryReport = await producer.ProduceAsync(topic, new Message<long, string> { Key = DateTime.UtcNow.Ticks, Value = msg });
-                    Console.WriteLine(string.Format("Message {0} sent (value: '{1}')", x, msg));
-                }
-            }
-        }
-        catch (Exception e)
+            BootstrapServers = brokerList,
+            SecurityProtocol = SecurityProtocol.Plaintext,
+        };
+
+        using (var producer = new ProducerBuilder<int, string>(config).SetKeySerializer(Serializers.Int32).SetValueSerializer(Serializers.Utf8).Build())
         {
-            Console.WriteLine(string.Format("Exception Occurred - {0}", e.Message));
+            Random rnd = new Random();
+
+            var eventType = "TypeA";  // Randomly choose between two event types
+            var y = rnd.Next(0, 10000);
+            var msg = $"Sample {eventType} message #{y} sent at {DateTime.Now:yyyy-MM-dd_HH:mm:ss.ffff}";
+            Console.WriteLine("Sending message: " + msg);
+            await producer.ProduceAsync(topic, new Message<int, string> { Key = y, Value = msg });
+            
         }
     }
 
@@ -61,7 +51,7 @@ public class Worker
             //Debug = "security,broker,protocol"    //Uncomment for librdkafka debugging information
         };
 
-        using (var consumer = new ConsumerBuilder<long, string>(config).SetKeyDeserializer(Deserializers.Int64).SetValueDeserializer(Deserializers.Utf8).Build())
+        using (var consumer = new ConsumerBuilder<int, string>(config).SetKeyDeserializer(Deserializers.Int32).SetValueDeserializer(Deserializers.Utf8).Build())
         {
             CancellationTokenSource cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -70,6 +60,8 @@ public class Worker
 
             Console.WriteLine("Consuming messages from topic: " + topic + ", broker(s): " + brokerList);
 
+            Random rnd = new Random();
+                
             while (true)
             {
                 try
@@ -77,15 +69,19 @@ public class Worker
                     var msg = consumer.Consume(cts.Token);
                     Console.WriteLine($"Received: '{msg.Message.Value}'");
 
+                    if(rnd.Next(0, 2) == 0)
+                    {
+                        Console.WriteLine("Time.. to die...");
+                        throw new Exception("Something went wrong");
+                    }
+
+                    Console.WriteLine($"Completed processing: '{msg.Message.Value}'");
+
                     consumer.Commit(msg);
                 }
                 catch (ConsumeException e)
                 {
                     Console.WriteLine($"Consume error: {e.Error.Reason}");
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"Error: {e.Message}");
                 }
             }
         }
